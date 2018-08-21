@@ -1,4 +1,4 @@
-Currently only somewhat useable
+Currently only somewhat useable, only tested in Chrome but probably works in Firefox
 
 https://zatnik.github.io/arbitrary-tiling-ca/
 
