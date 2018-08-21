@@ -1,0 +1,154 @@
+
+
+<style>
+
+html, body {
+	font-family: sans-serif;
+	margin: 0;
+	padding: 0;
+}
+
+input[type=number] {
+	width: 4em;
+}
+
+#optionsElem {
+	border-bottom: 1px solid darkgray;
+}
+
+#optionsElem > * {
+	padding: 0 1em;
+}
+
+
+#settingsElem {
+	display: flex;
+	padding-top: 1em;
+	padding-bottom: 1em;
+}
+
+#settingsElem > *:nth-child(n + 2) {
+	margin-left: 3em;
+}
+
+#settingsElem > * > h4:first-child {
+	margin-top: 0
+}
+
+
+#controlsElem {
+	display: flex;
+	border-top: 1px solid #eee;
+	padding-top: 0.5em;
+	padding-bottom: 0.5em;
+}
+
+#controlsElem > *:nth-child(n + 2) {
+	margin-left: 3em;
+}
+
+
+#statesList {
+	display: inline-flex;
+	margin-left: 0.25em;
+	height: calc(0.5em + 2px);
+}
+
+#statesList, .stateButton {
+	height: calc(0.85em);
+}
+
+.stateButton {
+	padding: 0.1em 0.2em;
+	margin: 1px;
+	display: flex;
+	align-items: center;
+	user-select: none;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+}
+
+.stateButton:nth-child(n + 2) {
+	margin-left: calc(1px + 0.25em);
+}
+
+.stateButton.selected {
+	border: 1px solid black;
+	margin: 0;
+}
+
+.stateButton.selected:nth-child(n + 2) {
+	margin-left: 0.25em;
+}
+
+.stateIcon {
+	width: 0.5em;
+	height: 0.5em;
+	border: 1px solid black;
+}
+
+.stateLabel {
+	font-size: 0.75em;
+	margin-left: 0.25em;
+}
+
+
+#speedElem {
+	display: inline-block;
+	margin-left: 0.5em;
+}
+
+</style>
+
+
+<div id="optionsElem">
+	<div id="settingsElem">
+		<div>
+			<h4>Tiling</h4>
+			Tiles: <select id="tilesInp"></select>
+			<br><br>
+			Repetitions:
+			<input type="number" id="repeatXInp" value="40">
+			x
+			<input type="number" id="repeatYInp" value="40">
+			<button id="applyGridDimensionsButton" disabled>Apply</button>
+			<br><br>
+			<input type="checkbox" id="wrapInp" checked> Wrap grid
+		</div>
+		<div>
+			<h4>Rule</h4>
+			(One Generations rule for each type of shape, comma-separated)
+			<br><br>
+			Shape order for this tiling: <span id="orderElem"></span>
+			<br><br>
+			Rule: <input type="text" id="ruleInp" value="23/3/2">
+			<button id="randomRuleButton">Random</button>
+		</div>
+	</div>
+	<div id="controlsElem">
+		<div id="statesElem">
+			State:
+			<div id="statesList"></div>
+		</div>
+		<div>
+			<button id="randomPatternButton">Random pattern</button>
+		</div>
+		<div>
+			<button id="runButton">Start</button>
+			<button id="stepButton">Step</button>
+			<div id="speedElem">
+				Speed: 
+				<button id="slowerButton">-</button>
+				<span id="speedLabel"></span> sec
+				<button id="fasterButton">+</button>
+			</div>
+		</div>
+	</div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+
+<script src="arbitrary-tiling-ca-tilings.js"></script>
+<script src="arbitrary-tiling-ca.js"></script>
