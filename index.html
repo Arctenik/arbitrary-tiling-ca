@@ -12,6 +12,10 @@ input[type=number] {
 	width: 4em;
 }
 
+.hidden {
+	display: none;
+}
+
 #optionsElem {
 	border-bottom: 1px solid darkgray;
 }
@@ -108,13 +112,20 @@ input[type=number] {
 			<h4>Tiling</h4>
 			Tiles: <select id="tilesInp"></select>
 			<br><br>
-			Repetitions:
-			<input type="number" id="repeatXInp" value="40">
-			x
-			<input type="number" id="repeatYInp" value="40">
-			<button id="applyGridDimensionsButton" disabled>Apply</button>
-			<br><br>
-			<input type="checkbox" id="wrapInp" checked> Wrap grid
+			Grid topology:
+			<select id="topologyInp">
+				<option value="plane">Plane</option>
+				<option value="torus" selected>Torus</option>
+				<option value="rectangle">Rectangle</option>
+			</select>
+			<div id="boundedGridSettingsElem">
+				<br>
+				Repetitions:
+				<input type="number" id="repeatXInp" value="40">
+				x
+				<input type="number" id="repeatYInp" value="40">
+				<button id="applyGridDimensionsButton" disabled>Apply</button>
+			</div>
 		</div>
 		<div>
 			<h4>Rule</h4>
@@ -133,6 +144,8 @@ input[type=number] {
 		</div>
 		<div>
 			<button id="randomPatternButton">Random pattern</button>
+			of size
+			<input type="number" id="randomPatternSizeInp" value="20">
 		</div>
 		<div>
 			<button id="runButton">Start</button>

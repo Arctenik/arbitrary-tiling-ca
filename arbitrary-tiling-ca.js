@@ -2,10 +2,11 @@
 
 var optionsElem = document.getElementById("optionsElem"),
 	tilesInp = document.getElementById("tilesInp"),
+	applyGridDimensionsButton = document.getElementById("applyGridDimensionsButton"),
+	topologyInp = document.getElementById("topologyInp"),
+	boundedGridSettingsElem = document.getElementById("boundedGridSettingsElem"),
 	repeatXInp = document.getElementById("repeatXInp"),
 	repeatYInp = document.getElementById("repeatYInp"),
-	applyGridDimensionsButton = document.getElementById("applyGridDimensionsButton"),
-	wrapInp = document.getElementById("wrapInp"),
 	orderElem = document.getElementById("orderElem"),
 	ruleInp = document.getElementById("ruleInp"),
 	randomRuleButton = document.getElementById("randomRuleButton"),
@@ -47,7 +48,7 @@ var bgColor = "black",
 	};
 
 var width, height,
-	wrapGrid = wrapInp.checked,
+	topology = topologyInp.value,
 	zoom = 10,
 	cameraWidth, cameraHeight,
 	cameraX = 0,
@@ -99,6 +100,8 @@ tilings.forEach((tiling, i) => {
 	tilesInp.appendChild(option);
 });
 
+document.querySelectorAll("button").forEach(b => b.addEventListener("click", () => b.blur()));
+
 
 loadTiling();
 
@@ -110,8 +113,8 @@ ruleInp.addEventListener("change", () => {
 	loadShapeRules();
 });
 
-wrapInp.addEventListener("change", () => {
-	wrapGrid = wrapInp.checked;
+topologyInp.addEventListener("change", () => {
+	changeTopology(topology, topology = topologyInp.value);
 });
 
 repeatXInp.addEventListener("change", () => {
@@ -141,8 +144,21 @@ randomPatternButton.addEventListener("click", () => {
 	cellStates = {};
 	specifiedCells = new Set();
 	
-	for (let x = 0; x < gridWidth; x++) {
-		for (let y = 0; y < gridHeight; y++) {
+	var width = parseInt(randomPatternSizeInp.value),
+		height = width;
+	
+	if (topology !== "plane") {
+		width = Math.min(width, gridWidth);
+		height = Math.min(height, gridWidth);
+	}
+	
+	var left = topology === "plane" ? Math.ceil(-width/2) : Math.floor((gridWidth - width)/2),
+		top = topology === "plane" ? Math.ceil(-height/2) : Math.floor((gridHeight - height)/2),
+		right = left + width,
+		bottom = top + height;
+	
+	for (let x = left; x < right; x++) {
+		for (let y = top; y < bottom; y++) {
 			tiling.cells.forEach((cell, i) => {
 				var state = Math.floor(Math.random() * rule[cell.type].numStates);
 				if (state) {
@@ -386,7 +402,10 @@ function step() {
 		let [x, y, i] = idToCoords(id);
 		cellsToLookAt.add(id);
 		tiling.cells[i].neighborOf.forEach(([nx, ny, ni]) => {
-			cellsToLookAt.add(coordsToId([...normalizeCoords(x + nx, y + ny), ni]));
+			var coords = normalizeCoords(x + nx, y + ny);
+			if (coords) {
+				cellsToLookAt.add(coordsToId([...coords, ni]));
+			}
 		});
 	}
 	
@@ -681,8 +700,13 @@ function startGrid() {
 	gridHeight = parseInt(repeatYInp.value);
 	cellStates = {};
 	specifiedCells = new Set();
-	cameraX = (gridWidth * tiling.width)/2;
-	cameraY = (gridHeight * tiling.height)/2;
+	if (topology === "plane") {
+		cameraX = 0;
+		cameraY = 0;
+	} else {
+		cameraX = (gridWidth * tiling.width)/2;
+		cameraY = (gridHeight * tiling.height)/2;
+	}
 }
 
 function updateGridDimensions(newWidth, newHeight) {
@@ -697,6 +721,15 @@ function updateGridDimensions(newWidth, newHeight) {
 	}
 	
 	specifiedCells = newSpecifiedCells;
+}
+
+function changeTopology(fromType, toType) {
+	if (fromType === "plane") {
+		boundedGridSettingsElem.classList.remove("hidden");
+		updateGridDimensions(gridWidth, gridHeight);
+	} else if (toType === "plane") {
+		boundedGridSettingsElem.classList.add("hidden");
+	}
 }
 
 
@@ -813,19 +846,26 @@ function getVisibleGridCoords() {
 		cameraLeft = cameraX - hRange,
 		cameraRight = cameraX + hRange,
 		cameraTop = cameraY - vRange,
-		cameraBottom = cameraY + vRange;
+		cameraBottom = cameraY + vRange,
+		minX = Math.ceil((cameraLeft - tiling.boundingRight)/tiling.width),
+		maxX = Math.floor((cameraRight - tiling.boundingLeft)/tiling.width),
+		minY = Math.ceil((cameraTop - tiling.boundingBottom)/tiling.height),
+		maxY = Math.floor((cameraBottom - tiling.boundingTop)/tiling.height);
 	
-	return [
-		Math.max(0, Math.ceil((cameraLeft - tiling.boundingRight)/tiling.width)),
-		Math.min(gridWidth - 1, Math.floor((cameraRight - tiling.boundingLeft)/tiling.width)),
-		Math.max(0, Math.ceil((cameraTop - tiling.boundingBottom)/tiling.height)),
-		Math.min(gridHeight - 1, Math.floor((cameraBottom - tiling.boundingTop)/tiling.height))
-	];
+	return topology === "plane" ? [minX, maxX, minY, maxY] : [Math.max(0, minX), Math.min(gridWidth - 1, maxX), Math.max(0, minY), Math.min(gridHeight - 1, maxY)];
 }
 
 
 function normalizeCoords(x, y) {
-	return [(x + gridWidth)%gridWidth, (y + gridHeight)%gridHeight];
+	return (
+		topology === "plane"
+		? [x, y]
+		: (
+			topology === "torus"
+			? [(x + gridWidth)%gridWidth, (y + gridHeight)%gridHeight]
+			: (0 <= x && x < gridWidth && 0 <= y && y < gridHeight ? [x, y] : false)
+		)
+	);
 }
 
 function coordsToId(c) {
@@ -862,16 +902,12 @@ function cellType(c) {
 function cellNeighbors(c) {
 	if (!Array.isArray(c)) c = idToCoords(c);
 	
-	var neighborCoords = tiling.cells[c[2]].neighbors.map(coords => [c[0] + coords[0], c[1] + coords[1], coords[2]]);
-	
-	if (wrapGrid) neighborCoords = neighborCoords.map(([x, y, i]) => {
-		return [
-			(x + gridWidth)%gridWidth,
-			(y + gridHeight)%gridHeight,
-			i
-		];
-	});
-	else neighborCoords = neighborCoords.filter(([x, y]) => 0 <= x && x < gridWidth && 0 <= y && y < gridHeight);
+	var neighborCoords = tiling.cells[c[2]].neighbors.map(coords => {
+		return [c[0] + coords[0], c[1] + coords[1], coords[2]];
+	}).map(([x, y, i]) => {
+		var coords = normalizeCoords(x, y);
+		return coords && [...coords, i];
+	}).filter(c => c);
 	
 	return neighborCoords;
 }
