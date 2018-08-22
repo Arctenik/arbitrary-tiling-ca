@@ -69,8 +69,11 @@ var width, height,
 	selectedState = 1,
 	currentDrawingState,
 	shapeRules = {},
-	rule, tiling,
-	grid, gridWidth, gridHeight,
+	rule, ruleMaxNumStates,
+	tiling,
+	cellStates, specifiedCells,
+	unspecifiedStates,
+	gridWidth, gridHeight,
 	mouseCaptureType = false,
 	stepInterval = 50,
 	running = false,
@@ -88,6 +91,8 @@ sizeCanvas();
 tilings.forEach((tiling, i) => {
 	getTilingLineSegments(tiling);
 	getTilingNeighborCounts(tiling);
+	getTilingNeighborsOf(tiling);
+	getTilingBoundingBox(tiling);
 	var option = document.createElement("option");
 	option.value = i;
 	option.textContent = tiling.name;
@@ -132,13 +137,22 @@ stepButton.addEventListener("click", () => {
 });
 
 randomPatternButton.addEventListener("click", () => {
-	grid.forEach(row => {
-		row.forEach(set => {
-			set.forEach((cell, i) => {
-				cell.state = Math.floor(Math.random() * rule[tiling.cells[i].type].numStates);
+	unspecifiedStates = tiling.cells.map(() => 0);
+	cellStates = {};
+	specifiedCells = new Set();
+	
+	for (let x = 0; x < gridWidth; x++) {
+		for (let y = 0; y < gridHeight; y++) {
+			tiling.cells.forEach((cell, i) => {
+				var state = Math.floor(Math.random() * rule[cell.type].numStates);
+				if (state) {
+					let id = coordsToId([x, y, i]);
+					cellStates[id] = state;
+					specifiedCells.add(id);
+				}
 			});
-		});
-	});
+		}
+	}
 });
 
 slowerButton.addEventListener("click", () => controlSlower());
@@ -360,35 +374,53 @@ function stopRunning(ui = true) {
 
 function step() {
 	lastStepTime = Date.now();
-	grid.forEach((row, y) => {
-		row.forEach((set, x) => {
-			set.forEach((cell, i) => {
-				var type = cellType([x, y, i]),
-					liveNeighbors = cellNeighbors([x, y, i]).filter(c => getCell(c) === 1).length;
-				
-				cell.newState = (
-					cell.state === 0
-					? (rule[type].birth.includes(liveNeighbors) ? 1 : 0)
-					: (
-						cell.state === 1
-						? (
-							rule[type].survival.includes(liveNeighbors)
-							? cell.state
-							: (rule[type].numStates > 2 ? 2 : 0)
-						)
-						: (cell.state < rule[type].numStates - 1 ? cell.state + 1 : 0)
-					)
-				);
-			});
+	
+	var newUnspecifiedStates = unspecifiedStates.map((state, i) => {
+			return getNewCellState(tiling.cells[i].type, state, tiling.cells[i].neighbors.map(([, , ni]) => unspecifiedStates[ni]));
+		}),
+		newCellStates = {},
+		newSpecifiedCells = new Set(),
+		cellsToLookAt = new Set();
+	
+	for (let id of specifiedCells) {
+		let [x, y, i] = idToCoords(id);
+		cellsToLookAt.add(id);
+		tiling.cells[i].neighborOf.forEach(([nx, ny, ni]) => {
+			cellsToLookAt.add(coordsToId([...normalizeCoords(x + nx, y + ny), ni]));
 		});
-	});
-	grid.forEach((row, y) => {
-		row.forEach((set, x) => {
-			set.forEach(cell => {
-				cell.state = cell.newState;
-			});
-		});
-	});
+	}
+	
+	for (let id of cellsToLookAt) {
+		let c = idToCoords(id),
+			newState = getNewCellState(cellType(c), getCell(c), cellNeighbors(c).map(nc => getCell(nc)));
+		
+		if (newState !== newUnspecifiedStates[c[2]]) {
+			newCellStates[id] = newState;
+			newSpecifiedCells.add(id);
+		}
+	}
+	
+	unspecifiedStates = newUnspecifiedStates;
+	cellStates = newCellStates;
+	specifiedCells = newSpecifiedCells;
+}
+
+function getNewCellState(type, state, neighborStates) {
+	var liveNeighbors = neighborStates.filter(state => state === 1).length;
+	
+	return (
+		state === 0
+		? (rule[type].birth.includes(liveNeighbors) ? 1 : 0)
+		: (
+			state === 1
+			? (
+				rule[type].survival.includes(liveNeighbors)
+				? state
+				: (rule[type].numStates > 2 ? 2 : 0)
+			)
+			: (state < rule[type].numStates - 1 ? state + 1 : 0)
+		)
+	);
 }
 
 
@@ -535,12 +567,40 @@ function getTilingNeighborCounts(tiling) {
 	});
 }
 
+function getTilingNeighborsOf(tiling) {
+	tiling.cells.forEach((cell, i) => {
+		cell.neighbors.forEach(c => {
+			var neighbor = tiling.cells[c[2]];
+			(neighbor.neighborOf || (neighbor.neighborOf = [])).push([-c[0], -c[1], i]);
+		});
+	});
+}
+
+function getTilingBoundingBox(tiling) {
+	var minX, maxX, minY, maxY;
+	tiling.cells.forEach(({vertices}) => {
+		vertices.forEach(([x, y]) => {
+			if (minX === undefined || x < minX) minX = x;
+			if (maxX === undefined || x > maxX) maxX = x;
+			if (minY === undefined || y < minY) minY = y;
+			if (maxY === undefined || y > maxY) maxY = y;
+		});
+	});
+	tiling.boundingLeft = minX;
+	tiling.boundingTop = minY;
+	tiling.boundingRight = maxX + 1;
+	tiling.boundingBottom = maxY + 1;
+	tiling.boundingWidth = tiling.boundingRight - tiling.boundingLeft;
+	tiling.boundingHeight = tiling.boundingBottom - tiling.boundingTop;
+}
+
 function loadTiling() {
 	tiling = tilings[tilesInp.value];
 	let neighborAmounts = {};
 	tiling.cells.forEach(({type, neighbors}) => neighborAmounts[type] = neighbors);
 	ruleInp.value = tiling.defaultRule || tiling.shapeOrder.map(type => shapeRules[type] || defaultShapeRules[neighborAmounts[type]] || defaultShapeRules.other).join(", ");
 	orderElem.textContent = tiling.shapeOrder.join(", ");
+	unspecifiedStates = tiling.cells.map(() => 0);
 	startGrid();
 	loadShapeRules();
 }
@@ -548,39 +608,50 @@ function loadTiling() {
 function loadShapeRules() {
 	var shapeRulesSource = ruleInp.value.split(/\s*,\s*/);
 	rule = {};
+	ruleMaxNumStates = 0;
 	tiling.shapeOrder.forEach((type, i) => {
 		shapeRules[type] = shapeRulesSource[i];
 		var [survival, birth, numStates] = shapeRules[type].split("/").map((s, i) => i === 2 ? parseInt(s) : [...s].map(s => parseInt(s)));
 		rule[type] = {survival, birth, numStates};
+		if (numStates > ruleMaxNumStates) ruleMaxNumStates = numStates;
 	});
 	updateGridCellStates();
 	makeStateButtons();
 }
 
 function updateGridCellStates() {
-	if (grid) {
-		grid.forEach(row => {
-			row.forEach(set => {
-				set.forEach(({state}, i) => {
-					var numStates = rule[tiling.cells[i].type].numStates;
-					if (state >= numStates) set[i].state = numStates - 1;
-				});
-			});
-		});
+	if (cellStates) {
+		var newUnspecifiedStates = unspecifiedStates.map((state, i) => adjustState(state, i)),
+			newCellStates = {},
+			newSpecifiedCells = new Set();
+		
+		for (let id of specifiedCells) {
+			let [, , i] = idToCoords(id),
+				state = adjustState(getCell(id), i);
+			
+			if (state !== newUnspecifiedStates) {
+				newCellStates[id] = state;
+				newSpecifiedCells.add(id);
+			}
+		}
+		
+		unspecifiedStates = newUnspecifiedStates;
+		cellStates = newCellStates;
+		specifiedCells = newSpecifiedCells;
+	}
+	
+	function adjustState(state, cellI) {
+		var numStates = rule[tiling.cells[cellI].type].numStates;
+		return state >= numStates ? numStates - 1 : state;
 	}
 }
 
 function makeStateButtons() {
-	var globalNumStates = 0;
-	for (let type in rule) {
-		if (rule[type].numStates > globalNumStates) globalNumStates = rule[type].numStates;
-	}
-	
-	if (selectedState >= globalNumStates) selectedState = globalNumStates - 1;
+	if (selectedState >= ruleMaxNumStates) selectedState = ruleMaxNumStates - 1;
 	
 	statesList.innerHTML = "";
 	
-	for (let state = 0; state < globalNumStates; state++) {
+	for (let state = 0; state < ruleMaxNumStates; state++) {
 		let elem = document.createElement("div"),
 			iconElem = document.createElement("div"),
 			labelElem = document.createElement("div");
@@ -590,7 +661,7 @@ function makeStateButtons() {
 		labelElem.classList.add("stateLabel");
 		if (state === selectedState) elem.classList.add("selected");
 		
-		iconElem.style.background = stateColor(stateButtonsBaseColor, globalNumStates, state);
+		iconElem.style.background = stateColor(stateButtonsBaseColor, ruleMaxNumStates, state);
 		labelElem.textContent = state;
 		
 		elem.addEventListener("click", () => {
@@ -608,128 +679,71 @@ function makeStateButtons() {
 function startGrid() {
 	gridWidth = parseInt(repeatXInp.value);
 	gridHeight = parseInt(repeatYInp.value);
-	grid = [];
-	for (let y = 0; y < gridHeight; y++) {
-		grid.push(newGridRow());
-	}
+	cellStates = {};
+	specifiedCells = new Set();
 	cameraX = (gridWidth * tiling.width)/2;
 	cameraY = (gridHeight * tiling.height)/2;
 }
 
 function updateGridDimensions(newWidth, newHeight) {
-	var dx = newWidth - gridWidth,
-		dy = newHeight - gridHeight;
-	
-	if (dy < 0) {
-		for (let i = 0; i > dy; i--) {
-			grid.pop();
-		}
-	} else if (dy > 0) {
-		for (let i = 0; i < dy; i++) {
-			grid.push(newGridRow(newWidth));
-		}
-	}
-	
-	if (dx) {
-		let minHeight = Math.min(gridHeight, newHeight);
-		
-		for (let y = 0; y < minHeight; y++) {
-			let row = grid[y];
-			if (dx < 0) {
-				for (let i = 0; i > dx; i--) {
-					row.pop();
-				}
-			} else {
-				for (let i = 0; i < dx; i++) {
-					row.push(newGridTileset());
-				}
-			}
-		}
-	}
-	
 	gridWidth = newWidth;
 	gridHeight = newHeight;
-}
-
-function updateGridWidth(newWidth) {
-	var d = newWidth - gridWidth;
-	grid.forEach(row => {
-		if (d < 0) {
-			for (let i = 0; i > d; i--) {
-				row.pop();
-			}
-		} else {
-			for (let i = 0; i < d; i++) {
-				row.push(newGridTileset());
-			}
-		}
-	});
-	gridWidth = newWidth;
-}
-
-function updateGridHeight(newHeight) {
-	var d = newHeight - gridHeight;
-	if (d < 0) {
-		for (let i = 0; i > d; i--) {
-			grid.pop();
-		}
-	} else {
-		for (let i = 0; i < d; i++) {
-			grid.push(newGridRow());
-		}
+	
+	var newSpecifiedCells = new Set();
+	
+	for (let id of specifiedCells) {
+		let [x, y] = idToCoords(id);
+		if (0 <= x && x < gridWidth && 0 <= y && y < gridHeight) newSpecifiedCells.add(id);
 	}
-	gridHeight = newHeight;
-}
-
-function newGridRow(width = gridWidth) {
-	var result = [];
-	for (let i = 0; i < width; i++) {
-		result.push(newGridTileset());
-	}
-	return result;
-}
-
-function newGridTileset() {
-	return tiling.cells.map(() => ({state: 0}));
+	
+	specifiedCells = newSpecifiedCells;
 }
 
 
 function renderPlayingField() {
 	ctx.fillStyle = bgColor;
 	ctx.fillRect(0, 0, cameraWidth, cameraHeight);
-	tiling.shapeOrder.forEach(type => {
-		for (let state = 0; state < rule[type].numStates; state++) {
-			ctx.beginPath();
-			grid.forEach((row, y) => {
-				row.forEach((set, x) => {
-					set.forEach((cell, i) => {
-						if (tiling.cells[i].type === type && cell.state === state) {
-							tiling.cells[i].vertices.forEach(([vx, vy], i) => {
-								ctx[i ? "lineTo" : "moveTo"](...cameraCoords(x * tiling.width + vx, y * tiling.height + vy));
-							});
-						}
-					});
-				});
-			});
-			ctx.fillStyle = stateColor(tiling.colors[type], rule[type].numStates, state);
-			ctx.fill();
-		}
-	});
+	
+	var [minX, maxX, minY, maxY] = getVisibleGridCoords();
+	
+	for (let state = 0; state < ruleMaxNumStates; state++) {
+		tiling.cells.forEach(({type}, i) => {
+			if (state < rule[type].numStates) {
+				ctx.beginPath();
+				
+				for (let x = minX; x <= maxX; x++) {
+					for (let y = minY; y <= maxY; y++) {
+						let c = [x, y, i];
+						if (getCell(c) === state) addCellToPath(c);
+					}
+				}
+				
+				ctx.fillStyle = stateColor(tiling.colors[type], rule[type].numStates, state);
+				ctx.fill();
+			}
+		});
+	}
 	
 	if (zoom > minBorderZoom) {
 		ctx.beginPath();
-		grid.forEach((row, y) => {
-			row.forEach((set, x) => {
+		for (let x = minX; x <= maxX; x++) {
+			for (let y = minY; y <= maxY; y++) {
 				tiling.lineSegments.forEach(s => {
 					if ((!s.leftOnly || x === 0) && (!s.topOnly || y === 0) && (!s.cornerOnly || (x === 0 && y === 0))) {
 						ctx.moveTo(...cameraCoords(x * tiling.width + s.from[0], y * tiling.height + s.from[1]));
 						ctx.lineTo(...cameraCoords(x * tiling.width + s.to[0], y * tiling.height + s.to[1]));
 					}
 				});
-			});
-		});
+			}
+		}
 		ctx.strokeStyle = cellBorderColor;
 		ctx.stroke();
+	}
+	
+	function addCellToPath([x, y, i]) {
+		tiling.cells[i].vertices.forEach(([vx, vy], i) => {
+			ctx[i ? "lineTo" : "moveTo"](...cameraCoords(x * tiling.width + vx, y * tiling.height + vy));
+		});
 	}
 }
 
@@ -793,20 +807,61 @@ function stateColor(baseColor, numStates, state) {
 }
 
 
-function setCell(c, state) {
-	var type = cellType(c);
-	grid[c[1]][c[0]][c[2]].state = state < rule[type].numStates ? state : rule[type].numStates - 1;
+function getVisibleGridCoords() {
+	var hRange = (cameraWidth/2)/zoom,
+		vRange = (cameraHeight/2)/zoom,
+		cameraLeft = cameraX - hRange,
+		cameraRight = cameraX + hRange,
+		cameraTop = cameraY - vRange,
+		cameraBottom = cameraY + vRange;
+	
+	return [
+		Math.max(0, Math.ceil((cameraLeft - tiling.boundingRight)/tiling.width)),
+		Math.min(gridWidth - 1, Math.floor((cameraRight - tiling.boundingLeft)/tiling.width)),
+		Math.max(0, Math.ceil((cameraTop - tiling.boundingBottom)/tiling.height)),
+		Math.min(gridHeight - 1, Math.floor((cameraBottom - tiling.boundingTop)/tiling.height))
+	];
 }
 
-function getCell(c) {
-	return grid[c[1]][c[0]][c[2]].state;
+
+function normalizeCoords(x, y) {
+	return [(x + gridWidth)%gridWidth, (y + gridHeight)%gridHeight];
+}
+
+function coordsToId(c) {
+	return c.join(",");
+}
+
+function idToCoords(id) {
+	return id.split(",").map(s => parseInt(s));
+}
+
+function setCell(cell, state) {
+	var id = Array.isArray(cell) ? coordsToId(cell) : cell,
+		c = Array.isArray(cell) ? cell : idToCoords(cell),
+		type = cellType(c);
+	
+	state = state < rule[type].numStates ? state : rule[type].numStates - 1;
+	cellStates[id] = state;
+	if (state === unspecifiedStates[c[2]]) specifiedCells.remove(id);
+	else specifiedCells.add(id);
+}
+
+function getCell(cell) {
+	var id = Array.isArray(cell) ? coordsToId(cell) : cell,
+		c = Array.isArray(cell) ? cell : idToCoords(cell);
+	
+	return specifiedCells.has(id) ? cellStates[id] : unspecifiedStates[c[2]];
 }
 
 function cellType(c) {
+	if (!Array.isArray(c)) c = idToCoords(c);
 	return tiling.cells[c[2]].type;
 }
 
 function cellNeighbors(c) {
+	if (!Array.isArray(c)) c = idToCoords(c);
+	
 	var neighborCoords = tiling.cells[c[2]].neighbors.map(coords => [c[0] + coords[0], c[1] + coords[1], coords[2]]);
 	
 	if (wrapGrid) neighborCoords = neighborCoords.map(([x, y, i]) => {
@@ -828,10 +883,11 @@ function eventCanvasCoords(e) {
 }
 
 function getTargetedCell(cx, cy) {
-	var coords = gridCoords(cx, cy);
-	for (let y = 0; y < grid.length; y++) {
-		let row = grid[y];
-		for (let x = 0; x < row.length; x++) {
+	var coords = gridCoords(cx, cy),
+		[minX, maxX, minY, maxY] = getVisibleGridCoords();
+	
+	for (let y = minY; y <= maxY; y++) {
+		for (let x = minX; x <= maxX; x++) {
 			for (let i = 0; i < tiling.cells.length; i++) {
 				let cell = tiling.cells[i];
 				if (pointIsInPolygon(coords, cell.vertices.map(([vx, vy]) => [x * tiling.width + vx, y * tiling.height + vy]))) {
